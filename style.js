@@ -140,7 +140,7 @@ function selectPricingTier(tier) {
 // wire up later.
 function openWhatsAppChat() {
     updateWhatsAppPanel();
-    $('whatsapp-panel-modal').classList.remove('hidden');
+    openPage('whatsapp-panel-modal');
 }
 function getWhatsAppLog() {
     try { return JSON.parse(localStorage.getItem('rzm_wa_log') || '[]'); } catch (e) { return []; }
@@ -179,10 +179,10 @@ function savePanelWhatsAppApiSettings() {
 function openExternalWhatsAppCompose() { window.open('https://api.whatsapp.com/send', '_blank'); }
 
 // ===== ADMIN: category / service live edit =====
-function openAdminLogin() { $('admin-pin').value = ''; $('admin-login').classList.remove('hidden'); $('admin-pin').focus(); }
+function openAdminLogin() { $('admin-pin').value = ''; openPage('admin-login'); $('admin-pin').focus(); }
 function checkPin() {
     if ($('admin-pin').value !== CONFIG.adminPin) return alert('Incorrect PIN!');
-    closeModal('admin-login'); renderAdmin(); $('admin-modal').classList.remove('hidden');
+    renderAdmin(); replacePage('admin-login', 'admin-modal');
 }
 function closeAdmin() { closeModal('admin-modal'); cart = []; renderServices(); updateCartUI(); }
 let adminSavedTimer = null;
@@ -256,7 +256,7 @@ function updateCartUI() {
 // 3. Confirm services -> customer details
 function openDetails() {
     if (!cart.length) return alert('Please select a service first!');
-    $('details-modal').classList.remove('hidden');
+    openPage('details-modal');
     lookupCustomer('phone');
     $('c-phone').focus();
 }
@@ -286,8 +286,8 @@ function lookupCustomer(source) {
         const offerLine = off.state === 'active'
             ? `<span class="cf-offer">🎁 ${fmtPct(off.pct)}% return discount will be applied (valid till ${fmtDate(off.until)})</span>`
             : off.state === 'expired' ? `<span class="cf-warn">Return offer expired on ${fmtDate(off.until)} — no discount this time. A new ${fmtPct(getLoyaltyPct())}% offer starts with this bill.</span>` : '';
-        status.innerHTML = `<div class="cust-found"><span class="tick">!</span><div class="cf-main"><b>Already registered</b><br><b>${esc(exact.name)}</b> &bull; ${esc(exact.type === 'Prime' ? 'Prime' : 'Basic')} customer &bull; ${visits} visit(s)${offerLine}
-            <span class="cf-actions"><button type="button" class="cf-btn" onclick="selectExistingCustomer('${esc(exact.phone)}')">Select &amp; Continue</button><button type="button" class="cf-btn alt" onclick="openEditCustomer('${esc(exact.phone)}','bill')">✎ Edit</button></span></div></div>`;
+        status.innerHTML = `<div class="cust-found"><button type="button" class="tick" title="Select this customer" aria-label="Select customer" onclick="openConfirmCustomer('${esc(exact.phone)}')">✓</button><div class="cf-main"><b>Already registered</b><br><b>${esc(exact.name)}</b> &bull; ${esc(exact.type === 'Prime' ? 'Prime' : 'Basic')} customer &bull; ${visits} visit(s)${offerLine}
+            <span class="cf-actions"><button type="button" class="cf-btn" onclick="openConfirmCustomer('${esc(exact.phone)}')">Select &amp; Continue</button><button type="button" class="cf-btn alt" onclick="openEditCustomer('${esc(exact.phone)}','bill')">✎ Edit</button></span></div></div>`;
         box.classList.add('hidden'); box.innerHTML = '';
         return;
     }
@@ -298,18 +298,100 @@ function lookupCustomer(source) {
         matches = all.filter(c => c.phone.startsWith(phone));
     }
     matches = matches.slice(0, 6);
-    box.innerHTML = matches.map(c => `<div class="sg-item" onclick="pickCustomer('${esc(c.phone)}')"><div><div class="sg-name">${esc(c.name)}</div><div class="sg-phone">+${esc(CONFIG.countryCode)} ${esc(c.phone)}</div></div><span class="sg-tag ${c.type === 'Prime' ? 'prime' : ''}">${esc((c.type === 'Prime') ? 'PRIME' : 'BASIC')}</span></div>`).join('');
+    box.innerHTML = matches.map(c => `<div class="sg-item" onclick="pickCustomer('${esc(c.phone)}')"><div><div class="sg-name">${esc(c.name)}</div><div class="sg-phone">+${esc(CONFIG.countryCode)} ${esc(c.phone)}</div></div><span class="sg-right"><span class="sg-tag ${c.type === 'Prime' ? 'prime' : ''}">${esc((c.type === 'Prime') ? 'PRIME' : 'BASIC')}</span><button type="button" class="sg-tick" title="Select this customer" aria-label="Select customer" onclick="event.stopPropagation();openConfirmCustomer('${esc(c.phone)}')">✓</button></span></div>`).join('');
     box.classList.toggle('hidden', !matches.length);
     status.innerHTML = phone.length === 10 ? '<div class="cust-new">New customer — enter the name. It will be saved after payment.</div>' : '';
 }
 // Select the registered customer: use their type's rates (Basic/Prime) and go to the bill
+// Tick on a saved customer -> selects them and opens the Confirm Customer page (edit or confirm)
+let confirmPhone = null;
+function openConfirmCustomer(phone) {
+    const c = db()[phone]; if (!c) return;
+    confirmPhone = phone;
+    $('c-phone').value = c.phone; $('c-name').value = c.name;      // customer is now selected
+    $('cust-suggest').classList.add('hidden');
+    renderConfirmCustomer();
+    openPage('confirm-customer-modal');
+}
+function renderConfirmCustomer() {
+    const c = confirmPhone ? db()[confirmPhone] : null;
+    if (!c) { $('confirm-customer-box').innerHTML = ''; return; }
+    const visits = Array.isArray(c.visits) ? c.visits.length : 0;
+    const off = getReturnOffer(c.phone);
+    const offerLine = off.state === 'active'
+        ? `<span class="offer-chip on">🎁 ${fmtPct(off.pct)}% return discount will be applied (valid till ${fmtDate(off.until)})</span>`
+        : off.state === 'expired' ? `<span class="offer-chip">Return offer expired on ${fmtDate(off.until)}</span>` : '';
+    $('confirm-customer-box').innerHTML = `
+        <div class="customer-detail-card">
+            <h3>${esc(c.name)}</h3>
+            <div><b>Type:</b> ${esc(c.type === 'Prime' ? 'Prime' : 'Basic')}</div>
+            <div><b>WhatsApp:</b> +${esc(CONFIG.countryCode)} ${esc(c.phone)}</div>
+            <div class="customer-extra"><b>Anniversary:</b> ${c.anniversary ? esc(c.anniversary) : 'Not added'}<br><b>Message:</b> ${c.message ? esc(c.message) : 'No message added'}</div>
+            <div><b>Total Visits:</b> ${visits}</div>
+            ${offerLine}
+        </div>`;
+}
+function confirmCustomerContinue() { if (confirmPhone) selectExistingCustomer(confirmPhone); }   // -> bill page (already existing next step)
+function editConfirmCustomer() { if (confirmPhone) openEditCustomer(confirmPhone, 'confirm'); }
 function selectExistingCustomer(phone) {
     const c = db()[phone]; if (!c) return;
     $('c-phone').value = c.phone; $('c-name').value = c.name;
     selectPricingTier(c.type === 'Prime' ? 'Prime' : 'Normal');
     showBill();
 }
-function closeModal(id) { $(id).classList.add('hidden'); }
+// ===== Page navigation: ONE step back at a time (in-app buttons, ← arrows, phone/browser Back) =====
+const navStack = [];
+let _ignorePop = 0;
+function openPage(id) {
+    const top = navStack[navStack.length - 1];
+    if (top === id) { $(id).classList.remove('hidden'); return; }
+    if (top) $(top).classList.add('hidden');       // previous page stays in the stack, just hidden
+    navStack.push(id);
+    $(id).classList.remove('hidden');
+    try { history.pushState({ rzmNav: navStack.length }, ''); } catch (e) {}
+}
+function replacePage(oldId, newId) {                // swap top page without adding a history step
+    const i = navStack.lastIndexOf(oldId);
+    if (i === -1) return openPage(newId);
+    $(oldId).classList.add('hidden');
+    navStack[i] = newId;
+    $(newId).classList.remove('hidden');
+}
+function _pageShown(id) {                           // refresh a page when we step back onto it
+    if (id === 'details-modal') lookupCustomer('phone');
+    else if (id === 'confirm-customer-modal') renderConfirmCustomer();
+    else if (id === 'customers-modal') renderCustomers();
+    else if (id === 'customer-detail-modal' && typeof detailPhone !== 'undefined' && detailPhone) openCustomerDetail(detailPhone);
+}
+function _navPop(fromBrowser) {
+    const cur = navStack.pop();
+    if (!cur) return;
+    $(cur).classList.add('hidden');
+    if (cur === 'add-customer-modal') editingPhone = null;
+    let steps = fromBrowser ? 0 : 1;
+    if (cur === 'success-popup') {                   // payment is done: leave the whole bill flow
+        steps += navStack.length;
+        navStack.splice(0).forEach(pid => $(pid).classList.add('hidden'));
+    } else {
+        const prev = navStack[navStack.length - 1];
+        if (prev) { $(prev).classList.remove('hidden'); _pageShown(prev); }
+    }
+    if (steps > 0) { _ignorePop++; history.go(-steps); }
+}
+function navBack() { if (navStack.length) _navPop(false); }
+window.addEventListener('popstate', () => {
+    if (_ignorePop > 0) { _ignorePop--; return; }
+    if (navStack.length) _navPop(true);
+});
+// Back / Cancel / ✕ buttons: step back one page (pages not in the stack are simply hidden)
+function closeModal(id) {
+    if (navStack[navStack.length - 1] === id) navBack();
+    else {
+        const i = navStack.lastIndexOf(id);
+        if (i !== -1) navStack.splice(i, 1);
+        $(id).classList.add('hidden');
+    }
+}
 
 // 4. Customer management
 function updateSavedCount() { const el = $('saved-count'); if (el) el.innerText = Object.keys(db()).length; }
@@ -334,7 +416,7 @@ function openAddCustomer() {
     $('new-c-message').value = '';
     showCustomerError('');
     selectCustomerType('Basic');
-    $('add-customer-modal').classList.remove('hidden');
+    openPage('add-customer-modal');
     $('new-c-name').focus();
 }
 
@@ -352,19 +434,11 @@ function openEditCustomer(phone, from) {
     $('new-c-message').value = c.message || '';
     showCustomerError('');
     selectCustomerType(c.type === 'Prime' ? 'Prime' : 'Basic');
-    closeModal('customer-detail-modal');
-    if (from === 'bill') closeModal('details-modal');
-    $('add-customer-modal').classList.remove('hidden');
+    openPage('add-customer-modal');
     $('new-c-name').focus();
 }
 
-function editBack() {
-    const p = editingPhone;
-    editingPhone = null;
-    closeModal('add-customer-modal');
-    if (editOrigin === 'detail' && p) openCustomerDetail(p);
-    if (editOrigin === 'bill') { editOrigin = 'list'; $('details-modal').classList.remove('hidden'); lookupCustomer('phone'); }
-}
+function editBack() { navBack(); }
 
 function selectCustomerType(type) {
     selectedCustomerType = type;
@@ -402,17 +476,14 @@ function saveNewCustomer() {
     d[phone] = old;
     localStorage.setItem('rzm_customers', JSON.stringify(d));
 
-    editingPhone = null;
-    closeModal('add-customer-modal');
-    if (isEdit && editOrigin === 'bill') {   // back to billing; Basic<->Prime change applies to the rates here
-        editOrigin = 'list';
+    if (isEdit && (editOrigin === 'bill' || editOrigin === 'confirm')) {   // Basic<->Prime change applies to the rates here
         $('c-phone').value = old.phone; $('c-name').value = old.name;
         selectPricingTier(old.type === 'Prime' ? 'Prime' : 'Normal');
-        $('details-modal').classList.remove('hidden');
-        lookupCustomer('phone');
+        if (editOrigin === 'confirm') confirmPhone = old.phone;
     }
+    editOrigin = 'list';
     updateSavedCount();
-    if (!$('customers-modal').classList.contains('hidden')) renderCustomers();
+    navBack();                               // one step back: Confirm page / Customer Details / list (refreshed)
     showSaveSuccess(old, isEdit);
 }
 
@@ -435,6 +506,7 @@ function closeSaveSuccess() {
     $('save-success-modal').classList.add('hidden');
 }
 
+let detailPhone = null;
 function openCustomerDetail(phone) {
     const c = db()[phone];
     if (!c) return;
@@ -459,7 +531,8 @@ function openCustomerDetail(phone) {
                     ${v.discountAmt ? `<b>Discount:</b> ${fmtPct(v.discountPct)}% (-₹${v.discountAmt})<br>` : ''}<b>Total:</b> ₹${v.total || 0}
                 </div>`).reverse().join('') : '<div class="visit-card">No service history yet.</div>'}
         </div>`;
-    $('customer-detail-modal').classList.remove('hidden');
+    detailPhone = phone;
+    openPage('customer-detail-modal');
 }
 
 // 5. Bill + UPI QR
@@ -530,7 +603,7 @@ function showBill() {
         total: subtotal - discountAmt, paymentMethod: 'Cash' };
     renderBillPreview();
     $('payment-method').value='Cash'; updatePaymentView();
-    closeModal('details-modal'); $('bill-modal').classList.remove('hidden');
+    openPage('bill-modal');
 }
 function updatePaymentView(){
     current.paymentMethod = $('payment-method').value;
@@ -568,9 +641,93 @@ function confirmPayment() {
 
     makePdf();
     $('confirmed-bill-box').innerHTML = $('bill-box').innerHTML;
-    closeModal('bill-modal');
     $('success-msg').innerText = `₹${current.total} received from ${current.name}.` + (current.discountAmt ? ` (${fmtPct(current.discountPct)}% return discount applied: -₹${current.discountAmt})` : '') + ' Customer data saved.';
-    $('success-popup').classList.remove('hidden');
+    openPage('success-popup');
+    announcePayment();
+}
+
+// Payment received: soundbox-style chime + spoken thank-you with customer name
+let _payAudioCtx = null;
+function playPaymentChime() {
+    try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return Promise.resolve();
+        _payAudioCtx = _payAudioCtx || new AC();
+        const ctx = _payAudioCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+        const t0 = ctx.currentTime + 0.02;
+        [[880, 0], [1175, 0.16], [1568, 0.32]].forEach(([f, d]) => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sine'; o.frequency.value = f;
+            g.gain.setValueAtTime(0.0001, t0 + d);
+            g.gain.exponentialRampToValueAtTime(0.35, t0 + d + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.3);
+            o.connect(g); g.connect(ctx.destination);
+            o.start(t0 + d); o.stop(t0 + d + 0.32);
+        });
+        return new Promise(r => setTimeout(r, 750));
+    } catch (e) { return Promise.resolve(); }
+}
+// Pick a FEMALE Indian voice (falls back to any female English voice)
+const _MALE_RX = /(ravi|prabhat|hemant|rishi|madhur|kumar|male(?!.*female)|david|mark|george|james|daniel|alex|fred|guy)/i;
+const _FEMALE_RX = /(neerja|heera|veena|lekha|kalpana|swara|aditi|raveena|priya|zira|samantha|susan|hazel|female|woman|google \u0939\u093f\u0928\u094d\u0926\u0940|google uk english female|google us english)/i;
+function pickFemaleVoice() {
+    const all = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+    const notMale = all.filter(v => !_MALE_RX.test(v.name) || /female/i.test(v.name));
+    const rank = [
+        v => /en[-_]IN/i.test(v.lang) && _FEMALE_RX.test(v.name),
+        v => /hi[-_]IN/i.test(v.lang) && _FEMALE_RX.test(v.name),
+        v => /en[-_]IN/i.test(v.lang),
+        v => /hi[-_]IN/i.test(v.lang),
+        v => /^en/i.test(v.lang) && _FEMALE_RX.test(v.name),
+        v => /^en/i.test(v.lang)
+    ];
+    for (const test of rank) { const v = notMale.find(test); if (v) return v; }
+    return null;
+}
+if ('speechSynthesis' in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices(); }
+// Clean the customer name so it is read properly (ABHI DHIMAN -> Abhi Dhiman)
+function speakableName(n) {
+    const t = String(n || '').replace(/[^A-Za-z\u0900-\u097F\s.'-]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return 'customer';
+    return t.split(' ').map(w => /[A-Za-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w).join(' ');
+}
+// 1st choice: Indian-accent FEMALE voice (online). Falls back to the device's own female voice.
+let _payAudio = null;
+function playOnlineVoice(text) {
+    return new Promise((resolve, reject) => {
+        if (navigator.onLine === false) return reject(new Error('offline'));
+        let started = false, done = false;
+        const a = new Audio('https://translate.google.co.in/translate_tts?ie=UTF-8&client=tw-ob&tl=en&q=' + encodeURIComponent(text));
+        a.referrerPolicy = 'no-referrer';
+        const fail = () => { if (done) return; done = true; clearTimeout(timer); try { a.pause(); a.removeAttribute('src'); a.load(); } catch (e) {} reject(new Error('voice failed')); };
+        const timer = setTimeout(() => { if (!started) fail(); }, 4500);
+        a.onplaying = () => { started = true; clearTimeout(timer); };
+        a.onended = () => { done = true; resolve(); };
+        a.onerror = () => { if (!started) fail(); };
+        if (_payAudio) { try { _payAudio.pause(); } catch (e) {} }
+        _payAudio = a;
+        a.play().catch(fail);
+    });
+}
+function speakWithDeviceVoice(text) {
+    try {
+        if (!('speechSynthesis' in window)) return;
+        const u = new SpeechSynthesisUtterance(text);
+        const v = pickFemaleVoice();
+        if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'en-IN'; }
+        const sure = v && _FEMALE_RX.test(v.name);
+        u.rate = 0.92; u.pitch = sure ? 1.05 : 1.45; u.volume = 1;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+    } catch (e) {}
+}
+function speakPaymentThanks() {
+    const text = `Payment received. Thank you ${speakableName(current && current.name)}, for visiting Relax Zone Makeover.`;
+    playOnlineVoice(text).catch(() => speakWithDeviceVoice(text));
+}
+function announcePayment() {
+    playPaymentChime().then(speakPaymentThanks);
 }
 
 // 6. Invoice PDF (jsPDF)
@@ -730,7 +887,7 @@ function sendWhatsApp() {
 }
 
 // 8. Saved customers list
-function openCustomers() { renderCustomers(); $('customers-modal').classList.remove('hidden'); }
+function openCustomers() { renderCustomers(); openPage('customers-modal'); }
 function renderCustomers() {
     const q = ($('c-search').value || '').trim().toLowerCase();
     const all = Object.values(db()).filter(c => c && c.name);
