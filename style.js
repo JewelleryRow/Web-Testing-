@@ -934,3 +934,54 @@ function resetBilling() {
 
 renderServices();
 updateCartUI();updateSavedCount();
+/* ===== Banner theme picker ===== */
+const BANNER_THEMES = [
+    { id:'white',    name:'White',    group:'Classic' },
+    { id:'black',    name:'Black',    group:'Classic' },
+    { id:'rainbow',  name:'Rainbow',  group:'Classic' },
+    { id:'rose',     name:'Rose',     group:'Colorful' },
+    { id:'ocean',    name:'Ocean',    group:'Colorful' },
+    { id:'mint',     name:'Mint',     group:'Colorful' },
+    { id:'sunset',   name:'Sunset',   group:'Colorful' },
+    { id:'gold',     name:'Gold',     group:'Premium' },
+    { id:'royal',    name:'Royal',    group:'Premium' },
+    { id:'midnight', name:'Midnight', group:'Premium' },
+    { id:'emerald',  name:'Emerald',      group:'Solid Color' },
+    { id:'crimson',  name:'Crimson',      group:'Solid Color' },
+    { id:'navy',     name:'Navy',         group:'Solid Color' },
+    { id:'solar',    name:'Solar System', group:'Scenes' },
+    { id:'moon',     name:'Star & Moon',  group:'Scenes' },
+    { id:'mandir',   name:'Mandir',       group:'Divine' },
+    { id:'krishna',  name:'Kanha',        group:'Divine' },
+    { id:'shiv',     name:'Mahadev',      group:'Divine' },
+    { id:'ram',      name:'Ram',          group:'Divine' }
+];
+let pendingTheme = 'rainbow';
+const getBannerTheme = () => {
+    const t = localStorage.getItem('rzm_banner_theme');
+    return BANNER_THEMES.some(x => x.id === t) ? t : 'rainbow';
+};
+function applyBannerTheme(id) {
+    const hdr = document.querySelector('.salon-header');
+    if (!hdr) return;
+    if (id === 'rainbow') hdr.removeAttribute('data-theme'); else hdr.setAttribute('data-theme', id);
+}
+function renderThemeCards() {
+    const groups = [...new Set(BANNER_THEMES.map(t => t.group))];
+    $('theme-groups').innerHTML = groups.map(g => `
+        <div class="th-group-title">${g}</div>
+        <div class="th-grid">${BANNER_THEMES.filter(t => t.group === g).map(t => `
+            <button type="button" class="th-card ${t.id === pendingTheme ? 'sel' : ''}" data-theme="${t.id}" onclick="pickBannerTheme('${t.id}')">
+                <div class="th-sw">Aa</div><span class="th-nm">${t.name}</span>
+            </button>`).join('')}
+        </div>`).join('');
+    $('theme-preview').setAttribute('data-theme', pendingTheme);
+}
+function pickBannerTheme(id) { pendingTheme = id; renderThemeCards(); }
+function openThemePicker() { pendingTheme = getBannerTheme(); renderThemeCards(); openPage('theme-modal'); }
+function saveBannerTheme() {
+    localStorage.setItem('rzm_banner_theme', pendingTheme);
+    applyBannerTheme(pendingTheme);
+    closeModal('theme-modal');
+}
+applyBannerTheme(getBannerTheme());
